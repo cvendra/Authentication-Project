@@ -6,6 +6,7 @@ const ejs = require("ejs");
 const port = 3000;
 const app = express();
 const _ = require("lodash");
+const encrypt = require("mongoose-encryption");
 
 app.set("view engine", "ejs");
 app.use(bodyParser.urlencoded({extended: true}));
@@ -38,6 +39,9 @@ const userSchema = new mongoose.Schema({
     required: [true, "Why no password?"]
   }
 });
+
+var secret = 'Thisisourlittlesecret';
+userSchema.plugin(encrypt, { secret: secret, encryptedFields: ["password"]});
 
 const NewUser = mongoose.model("NewUser", userSchema);
 
