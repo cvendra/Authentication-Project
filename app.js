@@ -7,7 +7,7 @@ const ejs = require("ejs");
 const port = 3000;
 const app = express();
 const _ = require("lodash");
-const encrypt = require("mongoose-encryption");
+const md5 = require("md5");
 
 app.set("view engine", "ejs");
 app.use(bodyParser.urlencoded({extended: true}));
@@ -41,9 +41,6 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-console.log("secret key: " + process.env.SECRET);
-userSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"]});
-
 const NewUser = mongoose.model("NewUser", userSchema);
 
 app.get("/", function(req, res) {
@@ -64,7 +61,7 @@ app.post("/register", function(req, res) {
       if(!foundItem) {
         var myVar = new NewUser({
           email: req.body.username,
-          password: req.body.password
+          password: md5(req.body.password)
         });
 
         myVar.save(function(err) {
@@ -100,7 +97,7 @@ app.post("/login", function(req, res) {
       }
       else if(foundItem){
         console.log("email-id " + foundItem.email + " found");
-        if(_.capitalize(req.body.password) === _.capitalize(foundItem.password)) {
+        if(md5(_.capitalize(req.body.password)) === _.capitalize(foundItem.password)) {
             res.render("secrets");
         }
         else{
