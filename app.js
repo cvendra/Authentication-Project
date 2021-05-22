@@ -60,7 +60,7 @@ app.post("/register", function(req, res) {
   NewUser.findOne({email: req.body.username}, function(err, foundItem) {
     if(!err) {
       if(!foundItem) {
-        bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
+        bcrypt.hash(req.body.password, saltRounds, function(err, hash) {   //hash is the final crypted password to be stored in DB
           var myVar = new NewUser({
             email: req.body.username,
             password: hash
@@ -102,7 +102,7 @@ app.post("/login", function(req, res) {
         console.log("email-id " + foundItem.email + " found");
         bcrypt.compare(req.body.password, foundItem.password, function(err, result) {
           if(!err) {
-            if(result) {
+            if(result) {           //result will depict if user password is same as DB stored password
               res.render("secrets");
             }
             else {
