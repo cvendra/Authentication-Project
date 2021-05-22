@@ -7,7 +7,8 @@ const ejs = require("ejs");
 const port = 3000;
 const app = express();
 const _ = require("lodash");
-const md5 = require("md5");
+const bcrypt = require("bcrypt");
+const saltRounds = 10;            //10 rounds of salting+hashing for the user password
 
 app.set("view engine", "ejs");
 app.use(bodyParser.urlencoded({extended: true}));
@@ -59,21 +60,23 @@ app.post("/register", function(req, res) {
   NewUser.findOne({email: req.body.username}, function(err, foundItem) {
     if(!err) {
       if(!foundItem) {
-        var myVar = new NewUser({
-          email: req.body.username,
-          password: md5(req.body.password)
-        });
+        bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
+          var myVar = new NewUser({
+            email: req.body.username,
+            password: hash
+          });
 
-        myVar.save(function(err) {
-          if(!err) {
-            console.log("New user saved to " + dbName);
-            res.render("secrets");
-          }
-          else {
-            console.log(err);
-            res.render(err);
-          }
-        });
+          myVar.save(function(err) {
+            if(!err) {
+              console.log("New user saved to " + dbName);
+              res.render("secrets");
+            }
+            else {
+              console.log(err);
+              res.render(err);
+            }
+          });
+       });
       }
       else if (foundItem) {
         console.log(req.body.username + " is already registerd in DB!");
@@ -97,13 +100,21 @@ app.post("/login", function(req, res) {
       }
       else if(foundItem){
         console.log("email-id " + foundItem.email + " found");
-        if(md5(_.capitalize(req.body.password)) === _.capitalize(foundItem.password)) {
-            res.render("secrets");
-        }
-        else{
-          console.log("Password dont match, Plz try again!");
-          res.render("login");
-        }
+        bcrypt.compare(req.body.password, foundItem.password, function(err, result) {
+          if(!err) {
+            if(result) {
+              res.render("secrets");
+            }
+            else {
+              console.log("Password dont match, Plz try again!");
+              res.render("login");
+            }
+          }
+          else {
+            console.log(err);
+            res.render(err);
+          }
+        });
       }
     }
     else {
