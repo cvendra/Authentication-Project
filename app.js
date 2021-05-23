@@ -7,8 +7,11 @@ const ejs = require("ejs");
 const port = 3000;
 const app = express();
 const _ = require("lodash");
-const bcrypt = require("bcrypt");
-const saltRounds = 10;            //10 rounds of salting+hashing for the user password
+
+//packages for session and possport
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
 
 app.set("view engine", "ejs");
 app.use(bodyParser.urlencoded({extended: true}));
@@ -16,6 +19,19 @@ app.use(express.static("public"));
 
 const dbName = "userDataBase";
 const mongoose = require("mongoose");
+
+//Use the session module in our project, location of the code in this file is important
+app.use(session({
+  secret: 'This is my secret key',     //this secret we will later put in .env file
+  resave: false,
+  saveUninitialized: true
+}));
+
+//initialize and start using passport
+app.use(passport.initialize());
+
+//tell our application to use passport to manage our sessions
+app.use(passport.session());
 
 mongoose.connect("mongodb://localhost:27017/" + dbName, {
   useNewUrlParser: true,
@@ -25,6 +41,8 @@ mongoose.connect("mongodb://localhost:27017/" + dbName, {
   useFindAndModify: false
 });
 
+mongoose.set("useCreateIndex", true);
+
 const db = mongoose.connection;
 db.on('error', console.error.bind(console, 'connection error:'));
 db.once('open', function() {
@@ -32,17 +50,30 @@ db.once('open', function() {
 });
 
 const userSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    required: [true, "Why no email-ID?"]
+  username: {
+    type: String
+  //  required: [true, "Why no username?"]
   },
   password: {
-    type: String,
-    required: [true, "Why no password?"]
+    type: String
+  //  required: [true, "Why no password?"]
   }
 });
 
+//tell our userSchema to use passportLocalMongoose as the plugin
+//passportLocalMongoose will do hashing and salting of our password and then save the new user to MongoDB
+userSchema.plugin(passportLocalMongoose);
+
 const NewUser = mongoose.model("NewUser", userSchema);
+
+//use a local strategy to authenticate the user using their username and password, also serialize and deserialize our user
+passport.use(NewUser.createStrategy());
+
+//serialize and deserialize only required when we are using sessions
+//serialize will basically create the cookie and store the required user information
+//deserialize will break the cookie to retrieve the required user information
+passport.serializeUser(NewUser.serializeUser());
+passport.deserializeUser(NewUser.deserializeUser());
 
 app.get("/", function(req, res) {
   res.render("home");
@@ -56,70 +87,58 @@ app.get("/login", function(req, res) {
   res.render("login");
 })
 
-app.post("/register", function(req, res) {
-  NewUser.findOne({email: req.body.username}, function(err, foundItem) {
-    if(!err) {
-      if(!foundItem) {
-        bcrypt.hash(req.body.password, saltRounds, function(err, hash) {   //hash is the final crypted password to be stored in DB
-          var myVar = new NewUser({
-            email: req.body.username,
-            password: hash
-          });
+/* if session is still active i.e if cookie present, then user should be able to directly access the secrets page without
+requiring to login again. But if the session is killed i.e cookie absent, then user should again login   */
+app.get("/secrets", function(req, res) {
+  if(req.isAuthenticated()) {
+    res.render("secrets");
+  }
+  else {
+    res.redirect("/login");
+  }
+});
 
-          myVar.save(function(err) {
-            if(!err) {
-              console.log("New user saved to " + dbName);
-              res.render("secrets");
-            }
-            else {
-              console.log(err);
-              res.render(err);
-            }
-          });
-       });
-      }
-      else if (foundItem) {
-        console.log(req.body.username + " is already registerd in DB!");
-        res.render("login");
-      }
-    }
-    else {
+//logout the user and end the session
+app.get("/logout", function(req, res) {
+  req.logout();
+  console.log("User logged out succesfully!");
+  res.redirect("/")
+});
+
+/*register the new user with his usernamr and Password,
+the new username and password is created by passsport module itself using the register() in the background and saved to DB.
+If registration is success then authenticate the new user using the passport local module and route user to secrets page
+ */
+app.post("/register", function(req, res) {
+  console.log("username: " + req.body.username);
+  NewUser.register({username: req.body.username}, req.body.password, function(err, user) {
+    if(err) {
       console.log(err);
-      res.render(err);
+      res.redirect("/");
     }
+    passport.authenticate("local")(req, res, function() {
+      res.redirect("/secrets");
+    });
   });
 });
 
+/*use the login() of the passport module and authenticate the user using the passport local module,
+if the authenticaion is successfull then route the user to sercrets page*/
 app.post("/login", function(req, res) {
-  NewUser.findOne({email: req.body.username}, function(err, foundItem) {
-    if(!err) {
-      if(!foundItem) {
-        console.log(req.body.username + " is not found in DB!");
-  //      res.write(req.body.username + "is not found in DB, Kindly register first!");
-        res.render("register");
-      }
-      else if(foundItem){
-        console.log("email-id " + foundItem.email + " found");
-        bcrypt.compare(req.body.password, foundItem.password, function(err, result) {
-          if(!err) {
-            if(result) {           //result will depict if user password is same as DB stored password
-              res.render("secrets");
-            }
-            else {
-              console.log("Password dont match, Plz try again!");
-              res.render("login");
-            }
-          }
-          else {
-            console.log(err);
-            res.render(err);
-          }
-        });
-      }
+  const newUser = new NewUser({
+    username: req.body.username,
+    password: req.body.password
+  });
+  req.login(newUser, function(err,){
+    if(err) {
+      console.log(err);
+      res.render("login");
     }
     else {
-      console.log(err);
-      res.render(err);
+      console.log("User Data sent for authentication!");
+      passport.authenticate("local")(req, res, function(){
+        res.redirect("/secrets");
+      });
     }
   });
 });
